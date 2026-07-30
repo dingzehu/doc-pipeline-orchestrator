@@ -93,6 +93,12 @@ DATABASES = {
 CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
 CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
 
+
+# Upstream service URL — used by AskView and the Celery task
+RAG_SEARCH_SERVICE_URL = os.environ.get(
+    'RAG_SEARCH_SERVICE_URL', 'http://rag-search-service:8000')
+
+
 # CORS — allow the React frontend to call this Django API
 CORS_ALLOW_ALL_ORIGINS = True  # fine for development; lock down in production
 
