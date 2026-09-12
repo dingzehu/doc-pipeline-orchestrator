@@ -1,4 +1,6 @@
+import os
 import tempfile
+from django.test import TestCase
 from django.test import override_settings
 from datetime import timedelta
 from django.utils import timezone
@@ -12,8 +14,9 @@ from rest_framework import status
 from django.urls import reverse
 
 from .models import Job
+from .tasks import process_pdf
 
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
@@ -23,10 +26,11 @@ class UploadViewTests(APITestCase):
             name="test.pdf",
             content=b"\x47\x49\x46\x38\x39\x61",  # dummy bytes
         )
-        self.res_upload = self.client.post(
-            reverse('upload'),
-            {'file': self.fake_file},
-            format='multipart')
+        with patch("jobs.views.process_pdf.delay") as mock_delay:
+            self.res_upload = self.client.post(
+                reverse('upload'),
+                {'file': self.fake_file},
+                format='multipart')
 
         job = Job.objects.get(filename="test.pdf")
 
@@ -34,6 +38,7 @@ class UploadViewTests(APITestCase):
         assert self.res_upload.data['filename'] == 'test.pdf'
         assert self.res_upload.data['status'] == Job.QUEUED
         assert job.status == Job.QUEUED
+        assert mock_delay.call_count == 1
 
     def test_missing_upload(self):
         self.res_upload = self.client.post(
@@ -122,9 +127,58 @@ class AskViewTests(APITestCase):
 
     def test_upstream_fail(self):
         with patch('jobs.views.httpx.post') as mock_post:
-            mock_post.side_effect = httpx.HTTPError
+            mock_post.side_effect = httpx.HTTPError("upstream error")
 
             self.response = self.client.post(
                 reverse('ask'), {"question": "what is ..."}, format='json')
 
             assert self.response.status_code == status.HTTP_502_BAD_GATEWAY
+
+
+class ProcessPdfTaskTests(TestCase):
+    def setUp(self):
+        self.job = Job.objects.create(filename="test.pdf")
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+        tmp.write(b"%PDF-1.4 fake content")
+        tmp.close()
+        self.pdf_path = tmp.name
+
+    def tearDown(self):
+        os.unlink(self.pdf_path)
+
+    def test_success(self):
+        extraction_mock = MagicMock()
+        extraction_mock.json.return_value = {"record_id": 42}
+
+        ingest_mock = MagicMock()
+        ingest_mock.json.return_value = {"status": "indexed"}
+
+        with patch("jobs.tasks.httpx.post") as mock_post:
+            mock_post.side_effect = [extraction_mock, ingest_mock]
+            process_pdf(self.job.id, self.pdf_path)
+
+        self.job.refresh_from_db()
+        assert self.job.status == Job.DONE
+        assert self.job.result_json == {"status": "indexed"}
+
+    def test_extraction_fails(self):
+        with patch("jobs.tasks.httpx.post") as mock_post:
+            mock_post.side_effect = httpx.HTTPError("extraction error")
+            process_pdf(self.job.id, self.pdf_path)
+
+        self.job.refresh_from_db()
+        assert self.job.status == Job.FAILED
+        assert self.job.error == "extraction error"
+
+    def test_ingestion_fails(self):
+        extraction_mock = MagicMock()
+        extraction_mock.json.return_value = {"record_id": 42}
+
+        with patch("jobs.tasks.httpx.post") as mock_post:
+            mock_post.side_effect = [extraction_mock, httpx.HTTPError("ingest error")]
+            process_pdf(self.job.id, self.pdf_path)
+
+        self.job.refresh_from_db()
+        assert self.job.status == Job.FAILED
+        assert self.job.error == "ingest error"
+            

@@ -1,0 +1,39 @@
+from celery import shared_task
+from .models import Job
+import httpx
+from django.conf import settings
+
+@shared_task
+def process_pdf(job_id, pdf_path):
+    job = Job.objects.get(id=job_id)
+    job.status = Job.PROCESSING
+    job.save()
+
+    try:
+        with open(pdf_path, "rb") as f:
+            extraction_response = httpx.post(
+                f"{settings.PDF_EXTRACTION_SERVICE_URL}/extract",
+                files={"file": f},
+                timeout=60.0,
+            )
+        extraction_response.raise_for_status()
+        record_id = extraction_response.json()["record_id"]
+
+        ingest_response = httpx.post(
+            f"{settings.RAG_SEARCH_SERVICE_URL}/ingest/document",
+            json={"record_id": record_id},
+            timeout=60.0,
+        )
+        ingest_response.raise_for_status()
+
+    except httpx.HTTPError as e:
+        job.status = Job.FAILED
+        job.error = str(e)
+        job.save()
+        return
+
+    job.status = Job.DONE
+    job.result_json = ingest_response.json()
+    job.save()
+
+        

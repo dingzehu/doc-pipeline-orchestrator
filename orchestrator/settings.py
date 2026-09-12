@@ -96,7 +96,11 @@ CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
 
 # Upstream service URL — used by AskView and the Celery task
 RAG_SEARCH_SERVICE_URL = os.environ.get(
-    'RAG_SEARCH_SERVICE_URL', 'http://rag-search-service:8000')
+    'RAG_SEARCH_SERVICE_URL', 'http://rag-search-service:8000'
+)
+PDF_EXTRACTION_SERVICE_URL = os.environ.get(
+    'PDF_EXTRACTION_SERVICE_URL', 'http://pdf-extraction-service:8000'
+)
 
 
 # CORS — allow the React frontend to call this Django API

@@ -5,9 +5,11 @@ from rest_framework import status
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from pathlib import Path
 
 from .models import Job
 from .serializers import JobSerializer
+from .tasks import process_pdf
 
 
 class UploadView(APIView):
@@ -24,6 +26,8 @@ class UploadView(APIView):
 
         try:
             default_storage.save(f"{job.id}_{uploaded_file.name}", uploaded_file)
+            pdf_path = str(Path(settings.MEDIA_ROOT) / f"{job.id}_{uploaded_file.name}")
+            process_pdf.delay(job.id, pdf_path)
         except OSError:
             # disk/permission error — job row already exists, so records the failure
             job.status = Job.FAILED
