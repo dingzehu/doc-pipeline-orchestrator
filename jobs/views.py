@@ -1,3 +1,7 @@
+import json
+from redis.asyncio import from_url as redis_async_from_url
+from django.http import StreamingHttpResponse
+from django.views import View
 import httpx
 from django.core.files.storage import default_storage
 from django.conf import settings
@@ -79,3 +83,27 @@ class AskView(APIView):
 
         # SearchResponse dict passed straight through to the frontend
         return Response(response.json())
+
+
+class EventsView(View):
+    async def get(self, request, pk):
+        async def event_stream():
+            r = await redis_async_from_url.from_url(settings.CELERY_BROKER_URL)
+            pubsub = r.pubsub()
+            await pubsub.subscribe(f"job:{pk}")
+            try:
+                async for message in pubsub.listen():
+                    if message["type"] != "message":
+                        continue
+                    yield f"data: {message['data'].decode()}\n\n"
+                    data = json.loads(message["data"])
+                    if data.get("status") in (Job.DONE, Job.FAILED):
+                        break
+            finally:
+                await pubsub.unsubscribe(f"job:{pk}")
+                await r.aclose()
+
+        return StreamingHttpResponse(
+            event_stream(),
+            content_type="text/event-stream"
+        )

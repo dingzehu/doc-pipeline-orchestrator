@@ -1,13 +1,23 @@
+import json
+import redis
 from celery import shared_task
 from .models import Job
 import httpx
 from django.conf import settings
+
+
+def _publish(r, job_id, payload):
+    r.publish(f"job:{job_id}", json.dumps(payload))
+
 
 @shared_task
 def process_pdf(job_id, pdf_path):
     job = Job.objects.get(id=job_id)
     job.status = Job.PROCESSING
     job.save()
+
+    r = redis.from_url(settings.CELERY_BROKER_URL)
+    _publish(r, job_id, {"status": "PROCESSING", "step": "started"})
 
     try:
         with open(pdf_path, "rb") as f:
@@ -18,6 +28,7 @@ def process_pdf(job_id, pdf_path):
             )
         extraction_response.raise_for_status()
         record_id = extraction_response.json()["record_id"]
+        _publish(r, job_id, {"status": "PROCESSING", "step": "extracted"})
 
         ingest_response = httpx.post(
             f"{settings.RAG_SEARCH_SERVICE_URL}/ingest/document",
@@ -30,10 +41,12 @@ def process_pdf(job_id, pdf_path):
         job.status = Job.FAILED
         job.error = str(e)
         job.save()
+        _publish(r, job_id, {"status": "FAILED", "error": str(e)})
         return
 
     job.status = Job.DONE
     job.result_json = ingest_response.json()
     job.save()
+    _publish(r, job_id, {"status": "DONE"})
 
         
