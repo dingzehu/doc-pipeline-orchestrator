@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {
-      '/api': 'orchestrator:8000',
+      '/api': 'http://orchestrator:8000',
     },
   },
 })

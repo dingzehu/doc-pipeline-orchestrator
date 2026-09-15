@@ -89,6 +89,17 @@ services:
       rag-search-service:
         condition: service_started
 
+  frontend:
+    build:
+      context: ./frontend
+    command: npm run dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+    depends_on:
+      - orchestrator
+
 volumes:
   postgres_data:
 
