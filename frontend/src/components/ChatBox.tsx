@@ -59,7 +59,7 @@ export function ChatBox() {
                             <ul className="mt-1 space-y-1">
                                 {result.sources.map((src, i) => (
                                     <li key={i} className="text-xs text-gray-600 border-l-2 border-blue-300 pl-2">
-                                        {src}
+                                        {src.title} — score: {src.similarity_score}
                                     </li>
                                 ))}
                             </ul>

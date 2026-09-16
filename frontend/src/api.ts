@@ -9,9 +9,17 @@ export interface Job {
     created_at: string
 }
 
+export interface Source {
+    arxiv_id: string
+    title: string
+    authors: string
+    chunk_text: string
+    similarity_score: number
+}
+
 export interface SearchResponse {
     answer: string
-    sources: string[]
+    sources: Source[]
 }
 
 export async function uploadPdf(file: File): Promise<Job> {
