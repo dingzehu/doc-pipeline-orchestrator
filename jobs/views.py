@@ -72,7 +72,7 @@ class AskView(APIView):
             response = httpx.post(
                 f"{settings.RAG_SEARCH_SERVICE_URL}/search",
                 json={"question": question, "top_k": 5},
-                timeout=30.0,
+                timeout=60.0,
             )
             response.raise_for_status()
         except httpx.HTTPError:   # network failure or non-2xx — an external boundary
@@ -88,7 +88,12 @@ class AskView(APIView):
 class EventsView(View):
     async def get(self, request, pk):
         async def event_stream():
-            r = await redis_async_from_url.from_url(settings.CELERY_BROKER_URL)
+            job = await Job.objects.aget(id=pk)
+            if job.status in (Job.DONE, Job.FAILED):
+                yield f"data: {json.dumps({'status': job.status})}\n\n"
+                return
+                
+            r = await redis_async_from_url(settings.CELERY_BROKER_URL)
             pubsub = r.pubsub()
             await pubsub.subscribe(f"job:{pk}")
             try:

@@ -30,11 +30,12 @@ def process_pdf(job_id, pdf_path):
         record_id = extraction_response.json()["record_id"]
         _publish(r, job_id, {"status": "PROCESSING", "step": "extracted"})
 
-        ingest_response = httpx.post(
-            f"{settings.RAG_SEARCH_SERVICE_URL}/ingest/document",
-            json={"record_id": record_id},
-            timeout=60.0,
-        )
+        with open(pdf_path, "rb") as f:
+            ingest_response = httpx.post(
+                f"{settings.RAG_SEARCH_SERVICE_URL}/ingest/document",
+                files={"file": f},
+                timeout=300.0,
+            )
         ingest_response.raise_for_status()
 
     except httpx.HTTPError as e:
