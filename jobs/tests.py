@@ -138,6 +138,9 @@ class ProcessPdfTaskTests(TestCase):
         tmp.write(b"%PDF-1.4 fake content")
         tmp.close()
         self.pdf_path = tmp.name
+        redis_patcher = patch("jobs.tasks.redis.from_url")
+        redis_patcher.start()
+        self.addCleanup(redis_patcher.stop)
 
     def tearDown(self):
         os.unlink(self.pdf_path)
