@@ -1,22 +1,18 @@
 import os
 import tempfile
-from django.test import TestCase
-from django.test import override_settings
 from datetime import timedelta
-from django.utils import timezone
+from unittest.mock import MagicMock, patch
+
 import httpx
 from django.core.files.uploadedfile import SimpleUploadedFile
-
-from orchestrator.settings import MEDIA_ROOT
-from rest_framework.test import APITestCase
-from rest_framework import status
-
+from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
+from rest_framework import status
+from rest_framework.test import APITestCase
 
 from .models import Job
 from .tasks import process_pdf
-
-from unittest.mock import patch, MagicMock
 
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())

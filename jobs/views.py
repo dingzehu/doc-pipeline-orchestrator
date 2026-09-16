@@ -1,15 +1,16 @@
 import json
-from redis.asyncio import from_url as redis_async_from_url
+from pathlib import Path
+
+import httpx
+from django.conf import settings
+from django.core.files.storage import default_storage
 from django.http import StreamingHttpResponse
 from django.views import View
-import httpx
-from django.core.files.storage import default_storage
-from django.conf import settings
+from redis.asyncio import from_url as redis_async_from_url
 from rest_framework import status
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from pathlib import Path
 
 from .models import Job
 from .serializers import JobSerializer

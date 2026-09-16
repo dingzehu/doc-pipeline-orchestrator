@@ -1,0 +1,5 @@
+[lint]
+ignore = [
+    "RUF012",  # Django mutable class attrs (STATUS_CHOICES, Meta.fields, migration ops)
+    "SIM115",  # context manager for NamedTemporaryFile — delete=False requires manual close
+]

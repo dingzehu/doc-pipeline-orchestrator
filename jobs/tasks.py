@@ -1,9 +1,11 @@
 import json
+
+import httpx
 import redis
 from celery import shared_task
-from .models import Job
-import httpx
 from django.conf import settings
+
+from .models import Job
 
 
 def _publish(r, job_id, payload):
@@ -27,7 +29,6 @@ def process_pdf(job_id, pdf_path):
                 timeout=60.0,
             )
         extraction_response.raise_for_status()
-        record_id = extraction_response.json()["record_id"]
         _publish(r, job_id, {"status": "PROCESSING", "step": "extracted"})
 
         with open(pdf_path, "rb") as f:
