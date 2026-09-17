@@ -6,6 +6,7 @@ export interface Job {
     status: JobStatus
     result_json: Record<string, unknown> | null
     error: string | null
+    summary: string | null
     created_at: string
 }
 
@@ -50,4 +51,9 @@ export async function askQuestion(question: string): Promise<SearchResponse> {
     })
     if (!res.ok) throw new Error (`Ask failed: ${res.status}`)
     return res.json()
+}
+
+export async function summarisePdf(id: number): Promise<void> {
+    const res = await fetch(`/api/summarise/${id}/`, { method:'POST' })
+    if (!res.ok) throw new Error(`Summarise failed: ${res.status}`)
 }

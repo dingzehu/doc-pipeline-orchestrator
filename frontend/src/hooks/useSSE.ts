@@ -6,9 +6,11 @@ export interface SSEEvent {
     error?: string
 }
 
-export function useSSE(jobId: number | null) {
+export function useSSE(jobId: number | null, initialStatus?: string) {
     const [event, setEvent] = useState<SSEEvent | null>(null)
-    const [done, setDone] = useState(false)
+    const [done, setDone] = useState(
+        initialStatus === 'DONE' || initialStatus === 'FAILED'
+    )
 
     useEffect(() => {
         if (jobId === null) return

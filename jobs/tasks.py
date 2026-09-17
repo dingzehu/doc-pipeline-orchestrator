@@ -4,7 +4,7 @@ import httpx
 import redis
 from celery import shared_task
 from django.conf import settings
-import google.generativeai as genai
+from google import genai
 from .models import Job
 
 
@@ -75,15 +75,19 @@ def summarise_job(job_id):
         return
 
     extraction = response.json().get("extraction", {})
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    model = genai.GenerativeModel("gemini-3.6-flash")
+
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
     prompt = (
         f"You are a document analyst. Below is structured data extracted from a PDF "
         f"named '{job.filename}'. Write a concise 2—3 sentence plain-English summary "
         f"of what this document is about and its key facts. \n\n"
         f"{json.dumps(extraction, indent=2)}"
     )
-    result = model.generate_content(prompt)
+    response = client.models.generate_content(
+        model="gemini-3.6-flash",
+        contents=prompt,
+    )
+    
 
-    job.summary = result.text
+    job.summary = response.text
     job.save()
