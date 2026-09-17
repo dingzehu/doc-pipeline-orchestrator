@@ -101,6 +101,7 @@ RAG_SEARCH_SERVICE_URL = os.environ.get(
 PDF_EXTRACTION_SERVICE_URL = os.environ.get(
     'PDF_EXTRACTION_SERVICE_URL', 'http://pdf-extraction-service:8000'
 )
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 
 
 # CORS — allow the React frontend to call this Django API

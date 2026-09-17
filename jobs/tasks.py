@@ -4,7 +4,7 @@ import httpx
 import redis
 from celery import shared_task
 from django.conf import settings
-
+import google.generativeai as genai
 from .models import Job
 
 
@@ -29,6 +29,7 @@ def process_pdf(job_id, pdf_path):
                 timeout=60.0,
             )
         extraction_response.raise_for_status()
+        record_id = extraction_response.json()["record_id"]
         _publish(r, job_id, {"status": "PROCESSING", "step": "extracted"})
 
         with open(pdf_path, "rb") as f:
@@ -47,8 +48,42 @@ def process_pdf(job_id, pdf_path):
         return
 
     job.status = Job.DONE
-    job.result_json = ingest_response.json()
+    job.result_json = {**ingest_response.json(), "record_id": record_id}
     job.save()
     _publish(r, job_id, {"status": "DONE"})
 
         
+@shared_task
+def summarise_job(job_id):
+    job = Job.objects.get(id=job_id)
+
+    record_id = (job.result_json or {}).get("record_id")
+    if not record_id:
+        job.summary = "No extraction record found for this job."
+        job.save()
+        return
+
+    try:
+        response = httpx.get(
+            f"{settings.PDF_EXTRACTION_SERVICE_URL}/results/{record_id}",
+            timeout=30.0,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as e:
+        job.summary = f"Could not fetch extraction: {e}"
+        job.save()
+        return
+
+    extraction = response.json().get("extraction", {})
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+    model = genai.GenerativeModel("gemini-3.6-flash")
+    prompt = (
+        f"You are a document analyst. Below is structured data extracted from a PDF "
+        f"named '{job.filename}'. Write a concise 2—3 sentence plain-English summary "
+        f"of what this document is about and its key facts. \n\n"
+        f"{json.dumps(extraction, indent=2)}"
+    )
+    result = model.generate_content(prompt)
+
+    job.summary = result.text
+    job.save()

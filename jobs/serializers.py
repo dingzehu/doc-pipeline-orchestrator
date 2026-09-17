@@ -6,5 +6,9 @@ from .models import Job
 class JobSerializer(serializers.ModelSerializer):
     class Meta:
         model = Job
-        fields = ["id", "filename", "status", "result_json", "error", "created_at"]
-        read_only_fields = ["id", "status", "result_json", "error", "created_at"]
+        fields = [
+            "id", "filename", "status", "result_json", "error", "summary", "created_at"
+        ]
+        read_only_fields = [
+            "id", "status", "result_json", "error", "summary", "created_at"
+            ]

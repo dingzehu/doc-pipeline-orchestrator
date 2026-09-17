@@ -21,6 +21,7 @@ class Job(models.Model):
     )
     result_json = models.JSONField(null=True, blank=True)   # stores extraction result dict
     error = models.TextField(null=True, blank=True)   # stores error message if failed
+    summary = models.TextFiels(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)   # set once on insert, never updated
 
     def __str__(self):

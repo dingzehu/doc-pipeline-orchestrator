@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 
 from .models import Job
 from .serializers import JobSerializer
-from .tasks import process_pdf
+from .tasks import process_pdf, summarise_job
 
 
 class UploadView(APIView):
@@ -113,3 +113,27 @@ class EventsView(View):
             event_stream(),
             content_type="text/event-stream"
         )
+
+
+class SummariseView(APIView):
+    def post(self, request, pk):
+        try:
+            job = Job.objects.get(id=pk)
+        except Job.DoesNotExist:
+            return Response(
+                {"error": "job not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if job.status != Job.DONE:
+            return Response(
+                {"error": "job must be DONE before summarising"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        summarise_job.delay(job.id)
+        return Response(
+            {"status": "summarising"},
+            status=status.HTTP_202_ACCEPTED
+        )
+        
