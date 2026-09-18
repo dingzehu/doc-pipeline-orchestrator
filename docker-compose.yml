@@ -71,6 +71,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      localstack:
+        condition: service_healthy
 
   celery-worker:
     build: .
@@ -88,6 +90,8 @@ services:
         condition: service_started
       rag-search-service:
         condition: service_started
+      localstack:
+        condition: service_healthy
 
   frontend:
     build:
@@ -109,9 +113,25 @@ services:
     volumes:
       - mlflow_data:/mlruns
 
+  localstack:
+    image: localstack/localstack
+    ports:
+      - "4566:4566"
+    environment:
+      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN}
+      SERVICES: s3
+    volumes:
+      - localstack_data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres_data:
   mlflow_data:
+  localstack_data:
 
     
 

@@ -102,6 +102,20 @@ PDF_EXTRACTION_SERVICE_URL = os.environ.get(
     'PDF_EXTRACTION_SERVICE_URL', 'http://pdf-extraction-service:8000'
 )
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+# --- S3 storage --------------------------------------
+# Only active when AWS_S3_ENDPOINT_URL is set (e.g. LocalStack in development).
+# To use real aws: remove AWS_ENDPOINT_URL and the skip flags in main.tf
+if os.environ.get('AWS_S3_ENDPOINT_URL'):
+    DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+    AWS_STORAGE_BUCKET_NAME = os.environ.get(
+        'AWS_STORAGE_BUCKET_NAME', 'doc-pipeline-pdfs'
+    )
+    AWS_S3_ENDPOINT_URL = os.environ.get('AWS_S3_ENDPOINT_URL')
+    AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID', 'test')
+    AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY', 'test')
+    AWS_DEFAULT_ACL = None
+    AWS_S3_SIGNATURE_VERSION = 's3v4'
+    AWS_QUERYSTRING_AUTH = False
 
 
 # CORS — allow the React frontend to call this Django API
