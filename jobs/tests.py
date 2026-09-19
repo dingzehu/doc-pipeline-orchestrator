@@ -1,7 +1,6 @@
 import os
 import tempfile
 from datetime import timedelta
-from tracemalloc import stop
 from unittest.mock import MagicMock, patch
 
 import httpx

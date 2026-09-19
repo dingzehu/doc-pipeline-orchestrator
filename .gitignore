@@ -39,6 +39,12 @@ coverage.xml
 # ── Docker ────────────────────────────────────────────────────────────────
 postgres_data/
 
+# ── Terraform ────────────────────────────────────────────────────────────
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+
 # ── Frontend (Vite + React + TypeScript) ─────────────────────────────────
 node_modules/
 frontend/dist/

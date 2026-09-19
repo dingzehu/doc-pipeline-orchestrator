@@ -6,6 +6,7 @@ from celery import shared_task
 from django.conf import settings
 from django.core.files.storage import default_storage
 from google import genai
+
 from .models import Job
 
 
