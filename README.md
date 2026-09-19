@@ -1,17 +1,6 @@
 # doc-pipeline-orchestrator
 
-A Django-based orchestration layer that wraps two existing AI/ML pipelines and exposes them through a unified web interface. Upload PDFs, watch real-time processing progress, and ask questions across all processed documents via a chat interface.
-
----
-
-## What it does
-
-1. **Upload** — user drops one or more PDF files into the frontend
-2. **Process** — a Celery worker calls two upstream services in sequence:
-   - `pdf-extraction-service` extracts structured fields using the Gemini API
-   - `rag-search-service` chunks, embeds, and indexes the text into pgvector
-3. **Watch** — the browser receives live step-by-step progress via Server-Sent Events (SSE)
-4. **Ask** — user types a question; Django calls `rag-search-service` and streams the answer back
+Django service that orchestrates two AI backends — PDF structured extraction and RAG-based semantic search — behind a unified REST API, letting users upload documents and query them in natural language without managing the underlying pipeline complexity. Uploads are processed asynchronously via Celery; the browser receives live progress over a Redis Pub/Sub SSE stream. Completed documents can be queried or summarised on demand via the Gemini API.
 
 ---
 
@@ -20,134 +9,132 @@ A Django-based orchestration layer that wraps two existing AI/ML pipelines and e
 ```
 [ React + Vite frontend ]
         |
-        | POST /api/upload/      → creates Job row, enqueues Celery task
-        | GET  /api/events/<id>/ → SSE stream (live progress)
-        | GET  /api/status/<id>/ → polling fallback
-        | GET  /api/jobs/        → job list on page load
-        | POST /api/ask/         → synchronous Q&A
+        | POST /api/upload/          → creates Job row, enqueues Celery task
+        | GET  /api/events/<id>/     → SSE stream (Redis Pub/Sub)
+        | GET  /api/status/<id>/     → polling fallback
+        | GET  /api/jobs/            → job list, newest first
+        | POST /api/ask/             → semantic search across all indexed documents
+        | POST /api/summarise/<id>/  → enqueue AI summary generation
         |
 [ Django REST Framework ]
-        |                   \
-        | enqueue             \  POST /search → rag-search-service
-        ↓                      \
-[ Redis ]  ← Celery broker        [ rag-search-service ]
-           ← Pub/Sub channel
+        |                        \
+        | enqueue                  \  POST /search → rag-search-service
+        ↓                           \
+[ Celery + Redis ]                    [ rag-search-service :8002 ]
+        |
+        | process_pdf:
+        | ① POST /extract          → pdf-extraction-service :8001
+        | ② POST /ingest/document  → rag-search-service :8002
+        |
+        | summarise_job:
+        | ① GET /results/<id>      → pdf-extraction-service :8001
+        | ② Gemini API             → plain-English summary stored on Job row
         ↓
-[ Celery worker ]
-        | ① POST /extract → pdf-extraction-service
-        | ② POST /ingest/document → rag-search-service
-        ↓
-[ PostgreSQL ]  ← Job rows (status, result_json)
+[ PostgreSQL ]      ← Job rows (status, result_json, summary, error)
+[ S3 / LocalStack ] ← uploaded PDF storage (Terraform-provisioned)
 ```
 
-### Upstream services (already exist — not modified)
+### Upstream services
 
-| Service | Repo | Host port | What it does |
-|---|---|---|---|
-| `pdf-extraction-service` | `pdf_2_structured_data_LLM_ETL_pipeline` | 8001 | Extracts structured fields from PDFs via Gemini API |
-| `rag-search-service` | `arxiv-rag` | 8002 | Chunks, embeds, indexes documents into pgvector; answers semantic search queries |
+| Service | Port | Role |
+|---|---|---|
+| `pdf-extraction-service` | 8001 | Structured field extraction from PDFs via Gemini API |
+| `rag-search-service` | 8002 | Document chunking, embedding, pgvector indexing, semantic search |
 
 ---
 
-## Tech stack
+## Stack
 
 | Layer | Technology |
 |---|---|
-| Backend API | Django 4.2 + Django REST Framework |
-| Task queue | Celery 5.3 |
-| Message broker | Redis 7 |
+| Backend | Django 4.2, Django REST Framework, Python 3.11 |
+| Task queue | Celery 5.3, Redis 7 |
 | SSE / async | `redis.asyncio`, Django async views |
 | Database | PostgreSQL 16 + pgvector |
-| Frontend | Vite + React 18 + TypeScript *(Phase 5)* |
-| Containerisation | Docker Compose |
-| CI/CD | GitHub Actions — pytest + ruff *(Phase 6)* |
-| AI | Gemini API (via upstream services) |
-| Python | 3.11 |
-
----
-
-## Prerequisites
-
-- Docker and Docker Compose
-- Both upstream repos cloned as siblings of this repo:
-  ```
-  dhu/
-  ├── doc-pipeline-orchestrator/   ← this repo
-  ├── pdf_2_structured_data_LLM_ETL_pipeline/
-  └── arxiv-rag/
-  ```
-- A `.env` file in the project root (see `.env.example`)
+| Storage | AWS S3 (LocalStack for local dev), Terraform IaC |
+| Frontend | React 18, Vite, TypeScript |
+| AI | Gemini API |
+| Containerisation | Docker Compose (8 services: orchestrator, Celery worker, PostgreSQL, Redis, pdf-extraction-service, rag-search-service, frontend, LocalStack) |
+| CI | GitHub Actions — ruff + pytest on every push |
 
 ---
 
 ## Getting started
 
 ```bash
-# 1. Copy and fill in the environment file
+# Clone this repo and both upstream services as siblings
+git clone https://github.com/dingzehu/doc-pipeline-orchestrator
+git clone https://github.com/dingzehu/pdf_2_structured_data_LLM_ETL_pipeline
+git clone https://github.com/dingzehu/arxiv-rag
+
+# Copy and fill in environment variables
 cp .env.example .env
 
-# 2. Start all services
+# Start all services
 docker compose up --build
 
-# 3. Run Django migrations
+# Run migrations
 docker compose exec orchestrator python manage.py migrate
 
-# 4. Open the frontend
-# http://localhost:8000 (Django API)
-# http://localhost:5173 (Vite dev server — after Phase 5)
+# Provision S3 bucket (LocalStack must be healthy)
+cd terraform && tflocal init && tflocal apply
+
+# Frontend:   http://localhost:5173
+# Django API: http://localhost:8000
 ```
 
 ---
 
-## API endpoints
+## API
 
 | Method | URL | Description |
 |---|---|---|
 | `POST` | `/api/upload/` | Upload a PDF; returns `Job` with `id` and `status: QUEUED` |
-| `GET` | `/api/events/<id>/` | SSE stream — pushes `PROCESSING`, `extracted`, `DONE`, `FAILED` events |
-| `GET` | `/api/status/<id>/` | Polling fallback — returns current `Job` row |
+| `GET` | `/api/events/<id>/` | SSE stream — real-time job progress |
+| `GET` | `/api/status/<id>/` | Polling fallback |
 | `GET` | `/api/jobs/` | List all jobs, newest first |
-| `POST` | `/api/ask/` | Body `{"question": str}` — returns answer and sources from rag-search-service |
+| `POST` | `/api/ask/` | `{"question": str}` — answer + sources |
+| `POST` | `/api/summarise/<id>/` | Enqueue AI summary for a completed job |
 
-### Job status lifecycle
+### Job lifecycle
 
 ```
 QUEUED → PROCESSING → DONE
                     ↘ FAILED
 ```
 
-### SSE event format
+### SSE events
 
 ```
 data: {"status": "PROCESSING", "step": "started"}
-
 data: {"status": "PROCESSING", "step": "extracted"}
-
 data: {"status": "DONE"}
-
 data: {"status": "FAILED", "error": "..."}
 ```
 
 ---
 
-## Development commands
+## Infrastructure
+
+The `terraform/` directory provisions the S3 bucket used for PDF storage. Configured for LocalStack locally; switching to real AWS requires removing the `skip_*` provider flags and supplying real credentials via environment variables.
+
+---
+
+## Tests
 
 ```bash
-# Run tests
-docker compose exec orchestrator pytest
-
-# Run tests with output
 docker compose exec orchestrator pytest -v
-
-# Lint
 docker compose exec orchestrator ruff check .
-
-# Open Django shell
-docker compose exec orchestrator python manage.py shell
-
-# Watch Celery worker logs
-docker compose logs -f celery-worker
 ```
+
+12 tests across all endpoints and the `process_pdf` Celery task. All upstream HTTP calls are mocked at the service boundary. CI runs against a real PostgreSQL 16 container on every push.
+
+Coverage:
+- `UploadView` — success, missing file, storage failure (`OSError` → `FAILED`)
+- `StatusView` — success, 404 on unknown ID
+- `JobListView` — newest-first ordering
+- `AskView` — success, missing question, upstream 502
+- `process_pdf` — success, extraction failure, ingestion failure
 
 ---
 
@@ -155,36 +142,16 @@ docker compose logs -f celery-worker
 
 ```
 doc-pipeline-orchestrator/
-├── orchestrator/          # Django project settings, URLs, Celery app
-│   ├── settings.py
-│   ├── celery.py
-│   └── urls.py
-├── jobs/                  # Django app — core logic
-│   ├── models.py          # Job model
-│   ├── views.py           # REST endpoints + async SSE view
-│   ├── tasks.py           # Celery task: process_pdf
-│   ├── serializers.py     # DRF serializer for Job
-│   ├── urls.py            # App-level routing
-│   └── tests.py           # 12 pytest tests
-├── frontend/              # React + Vite (Phase 5)
-├── docs/
-│   └── progress/          # Per-phase build notes and lessons learned
-├── docker-compose.yml
-├── Dockerfile
-└── requirements.txt
+├── orchestrator/        # Django settings, Celery app, root URLs
+├── jobs/
+│   ├── models.py        # Job model
+│   ├── views.py         # REST endpoints + async SSE view
+│   ├── tasks.py         # process_pdf + summarise_job Celery tasks
+│   ├── serializers.py
+│   ├── urls.py
+│   └── tests.py
+├── frontend/            # React + Vite + TypeScript
+├── terraform/           # S3 bucket IaC
+├── .github/workflows/   # CI pipeline
+└── docker-compose.yml   # 8 services
 ```
-
----
-
-## Build phases
-
-| Phase | Description | Status |
-|---|---|---|
-| 0 | Add `/ingest/document` to `rag-search-service` | Done |
-| 1 | Scaffold — Docker Compose, settings, requirements | Done |
-| 2 | Django `Job` model and migration | Done |
-| 3 | REST endpoints with polling | Done |
-| 4 | Celery task `process_pdf` | Done |
-| 4.5 | SSE upgrade — Redis Pub/Sub + async stream view | Done |
-| 5 | React frontend | In progress |
-| 6 | GitHub Actions CI | Pending |
