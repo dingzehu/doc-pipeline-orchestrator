@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 import httpx
 from django.conf import settings
@@ -30,9 +29,9 @@ class UploadView(APIView):
         job = Job.objects.create(filename=uploaded_file.name)
 
         try:
-            default_storage.save(f"{job.id}_{uploaded_file.name}", uploaded_file)
-            pdf_path = str(Path(settings.MEDIA_ROOT) / f"{job.id}_{uploaded_file.name}")
-            process_pdf.delay(job.id, pdf_path)
+            storage_key = f"{job.id}_{uploaded_file.name}"
+            default_storage.save(storage_key, uploaded_file)
+            process_pdf.delay(job.id, storage_key)
         except OSError:
             # disk/permission error — job row already exists, so records the failure
             job.status = Job.FAILED

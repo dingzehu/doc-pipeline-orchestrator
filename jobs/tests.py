@@ -1,6 +1,7 @@
 import os
 import tempfile
 from datetime import timedelta
+from tracemalloc import stop
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -22,7 +23,8 @@ class UploadViewTests(APITestCase):
             name="test.pdf",
             content=b"\x47\x49\x46\x38\x39\x61",  # dummy bytes
         )
-        with patch("jobs.views.process_pdf.delay") as mock_delay:
+        with patch("jobs.views.process_pdf.delay") as mock_delay, \
+            patch("jobs.views.default_storage.save"):
             self.res_upload = self.client.post(
                 reverse('upload'),
                 {'file': self.fake_file},
@@ -134,13 +136,23 @@ class AskViewTests(APITestCase):
 class ProcessPdfTaskTests(TestCase):
     def setUp(self):
         self.job = Job.objects.create(filename="test.pdf")
+        self.storage_key = f"{self.job.id}_test.pdf"
+
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
         tmp.write(b"%PDF-1.4 fake content")
         tmp.close()
         self.pdf_path = tmp.name
+
         redis_patcher = patch("jobs.tasks.redis.from_url")
         redis_patcher.start()
         self.addCleanup(redis_patcher.stop)
+
+        storage_patcher = patch(
+            "jobs.tasks.default_storage.open",
+            side_effect=lambda key, mode: open(self.pdf_path, mode),
+        )
+        storage_patcher.start()
+        self.addCleanup(storage_patcher.stop)
 
     def tearDown(self):
         os.unlink(self.pdf_path)
@@ -154,16 +166,16 @@ class ProcessPdfTaskTests(TestCase):
 
         with patch("jobs.tasks.httpx.post") as mock_post:
             mock_post.side_effect = [extraction_mock, ingest_mock]
-            process_pdf(self.job.id, self.pdf_path)
+            process_pdf(self.job.id, self.storage_key)
 
         self.job.refresh_from_db()
         assert self.job.status == Job.DONE
-        assert self.job.result_json == {"status": "indexed"}
+        assert self.job.result_json == {"status": "indexed", "record_id": 42}
 
     def test_extraction_fails(self):
         with patch("jobs.tasks.httpx.post") as mock_post:
             mock_post.side_effect = httpx.HTTPError("extraction error")
-            process_pdf(self.job.id, self.pdf_path)
+            process_pdf(self.job.id, self.storage_key)
 
         self.job.refresh_from_db()
         assert self.job.status == Job.FAILED
@@ -175,7 +187,7 @@ class ProcessPdfTaskTests(TestCase):
 
         with patch("jobs.tasks.httpx.post") as mock_post:
             mock_post.side_effect = [extraction_mock, httpx.HTTPError("ingest error")]
-            process_pdf(self.job.id, self.pdf_path)
+            process_pdf(self.job.id, self.storage_key)
 
         self.job.refresh_from_db()
         assert self.job.status == Job.FAILED

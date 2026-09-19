@@ -4,6 +4,7 @@ import httpx
 import redis
 from celery import shared_task
 from django.conf import settings
+from django.core.files.storage import default_storage
 from google import genai
 from .models import Job
 
@@ -13,7 +14,7 @@ def _publish(r, job_id, payload):
 
 
 @shared_task
-def process_pdf(job_id, pdf_path):
+def process_pdf(job_id, storage_key):
     job = Job.objects.get(id=job_id)
     job.status = Job.PROCESSING
     job.save()
@@ -22,7 +23,7 @@ def process_pdf(job_id, pdf_path):
     _publish(r, job_id, {"status": "PROCESSING", "step": "started"})
 
     try:
-        with open(pdf_path, "rb") as f:
+        with default_storage.open(storage_key, "rb") as f:
             extraction_response = httpx.post(
                 f"{settings.PDF_EXTRACTION_SERVICE_URL}/extract",
                 files={"file": f},
@@ -32,7 +33,7 @@ def process_pdf(job_id, pdf_path):
         record_id = extraction_response.json()["record_id"]
         _publish(r, job_id, {"status": "PROCESSING", "step": "extracted"})
 
-        with open(pdf_path, "rb") as f:
+        with default_storage.open(storage_key, "rb") as f:
             ingest_response = httpx.post(
                 f"{settings.RAG_SEARCH_SERVICE_URL}/ingest/document",
                 files={"file": f},

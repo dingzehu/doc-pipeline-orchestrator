@@ -106,7 +106,11 @@ GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 # Only active when AWS_S3_ENDPOINT_URL is set (e.g. LocalStack in development).
 # To use real aws: remove AWS_ENDPOINT_URL and the skip flags in main.tf
 if os.environ.get('AWS_S3_ENDPOINT_URL'):
-    DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+    STORAGES = {
+        "default": {"BACKEND": "storages.backends.s3boto3.S3Boto3Storage"},
+        "staticfiles": {"BACKEND":
+        "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
     AWS_STORAGE_BUCKET_NAME = os.environ.get(
         'AWS_STORAGE_BUCKET_NAME', 'doc-pipeline-pdfs'
     )
